@@ -18,8 +18,9 @@ const defaultRun: RunResult = {
 };
 
 export function detectLanguage(name: string) {
-  if (name.endsWith('.py')) return 'python' as const;
-  if (name.endsWith('.txt')) return 'plaintext' as const;
+  const normalizedName = name.toLowerCase();
+  if (normalizedName.endsWith('.py')) return 'python' as const;
+  if (normalizedName.endsWith('.txt')) return 'plaintext' as const;
   return null;
 }
 
@@ -154,17 +155,18 @@ export function nextColor(index: number) {
   return colors[index % colors.length];
 }
 
-export function createFile(room: Room, name: string) {
+export function createFile(room: Room, name: string, content = '') {
   const error = validateFileName(room, name);
   if (error) throw new Error(error);
   const file: RoomFile = {
     id: nanoid(10),
     name: name.trim(),
     language: detectLanguage(name.trim())!,
-    content: ''
+    content
   };
   room.files.push(file);
-  getRoomDoc(room.roomId).getText(`file:${file.id}`);
+  const text = getRoomDoc(room.roomId).getText(`file:${file.id}`);
+  if (content) text.insert(0, content);
   return file;
 }
 

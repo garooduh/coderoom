@@ -35,7 +35,7 @@ export type Room = RoomState & {
 export type ClientMessage =
   | { type: 'joinRoom'; roomId: string; clientId: string; name: string; color?: string }
   | { type: 'leaveRoom'; roomId: string; clientId: string }
-  | { type: 'createFile'; roomId: string; name: string }
+  | { type: 'createFile'; roomId: string; name: string; content?: string }
   | { type: 'renameFile'; roomId: string; fileId: string; name: string }
   | { type: 'deleteFile'; roomId: string; fileId: string }
   | { type: 'selectFile'; roomId: string; fileId: string }

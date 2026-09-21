@@ -1,6 +1,6 @@
 import Editor, { BeforeMount, OnMount } from '@monaco-editor/react';
 import type * as monaco from 'monaco-editor';
-import type { FormEvent } from 'react';
+import type { DragEvent as ReactDragEvent, FormEvent } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import * as Y from 'yjs';
@@ -8,7 +8,10 @@ import { WebsocketProvider } from 'y-websocket';
 import { MonacoBinding } from 'y-monaco';
 import { API_BASE_URL, WS_BASE_URL } from '../config';
 import { ThemeToggle, useTheme } from '../theme';
-import type { RoomFile, RoomState, RunResult, ServerMessage } from '../types';
+import type { ClientMessage, RoomFile, RoomState, RunResult, ServerMessage } from '../types';
+
+type WithoutRoomId<T> = T extends { roomId: string } ? Omit<T, 'roomId'> : never;
+type RoomCommand = WithoutRoomId<Exclude<ClientMessage, { type: 'joinRoom' } | { type: 'leaveRoom' }>>;
 
 const emptyRun: RunResult = {
   status: 'idle',
@@ -143,6 +146,7 @@ export function RoomPage() {
   const [editorModelFileId, setEditorModelFileId] = useState<string | null>(null);
   const [firstEditorLoadComplete, setFirstEditorLoadComplete] = useState(false);
   const [editorFontSize, setEditorFontSize] = useState(getStoredEditorFontSize);
+  const [isFileDragActive, setIsFileDragActive] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
     const saved = localStorage.getItem('isSidebarOpen');
     return saved !== 'false';
@@ -165,6 +169,7 @@ export function RoomPage() {
   const remoteSelectionStyleRef = useRef<HTMLStyleElement | null>(null);
   const topMenuRef = useRef<HTMLDetailsElement>(null);
   const cursorPositionsRef = useRef<Map<string, monaco.IPosition>>(new Map());
+  const fileDragDepthRef = useRef(0);
 
   const closeDropdowns = () => {
     topMenuRef.current?.removeAttribute('open');
@@ -395,7 +400,7 @@ export function RoomPage() {
     });
   }, [editorFontSize]);
 
-  const send = (payload: Record<string, unknown>) => {
+  const send = (payload: RoomCommand) => {
     setError('');
     if (wsRef.current?.readyState !== WebSocket.OPEN) {
       setError('WebSocket не подключен');
@@ -418,6 +423,60 @@ export function RoomPage() {
   function createFile() {
     const name = prompt('Имя файла (.py или .txt)');
     if (name) send({ type: 'createFile', name });
+  }
+
+  function isFileDrag(event: ReactDragEvent<HTMLElement>) {
+    return Array.from(event.dataTransfer.types).includes('Files');
+  }
+
+  function handleFileDragEnter(event: ReactDragEvent<HTMLElement>) {
+    if (!isFileDrag(event)) return;
+    event.preventDefault();
+    fileDragDepthRef.current += 1;
+    setIsFileDragActive(true);
+  }
+
+  function handleFileDragOver(event: ReactDragEvent<HTMLElement>) {
+    if (!isFileDrag(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+  }
+
+  function handleFileDragLeave(event: ReactDragEvent<HTMLElement>) {
+    if (!isFileDrag(event)) return;
+    event.preventDefault();
+    fileDragDepthRef.current = Math.max(0, fileDragDepthRef.current - 1);
+    if (fileDragDepthRef.current === 0) setIsFileDragActive(false);
+  }
+
+  async function handleFileDrop(event: ReactDragEvent<HTMLElement>) {
+    event.preventDefault();
+    fileDragDepthRef.current = 0;
+    setIsFileDragActive(false);
+
+    const droppedFiles = Array.from(event.dataTransfer.files);
+    const supportedFiles = droppedFiles.filter((file) => /\.(py|txt)$/i.test(file.name));
+    const unsupportedFiles = droppedFiles.filter((file) => !/\.(py|txt)$/i.test(file.name));
+
+    if (supportedFiles.length === 0) {
+      setError('Поддерживаются только файлы .py и .txt');
+      return;
+    }
+
+    if (wsRef.current?.readyState !== WebSocket.OPEN) {
+      setError('WebSocket не подключен');
+      return;
+    }
+
+    try {
+      const imports = await Promise.all(supportedFiles.map(async (file) => ({ name: file.name, content: await file.text() })));
+      imports.forEach((file) => send({ type: 'createFile', ...file }));
+      if (unsupportedFiles.length > 0) {
+        setError(`Пропущены неподдерживаемые файлы: ${unsupportedFiles.map((file) => file.name).join(', ')}`);
+      }
+    } catch {
+      setError('Не удалось прочитать выбранные файлы');
+    }
   }
 
   function renameFile(file: RoomFile) {
@@ -548,7 +607,13 @@ export function RoomPage() {
 
       <section className={`workspace ${isSidebarOpen ? '' : 'sidebar-collapsed'}`}>
         {isSidebarOpen && (
-          <aside className="sidebar">
+          <aside
+            className={`sidebar ${isFileDragActive ? 'fileDropActive' : ''}`}
+            onDragEnter={handleFileDragEnter}
+            onDragOver={handleFileDragOver}
+            onDragLeave={handleFileDragLeave}
+            onDrop={handleFileDrop}
+          >
             <div className="panelHeader">
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span className="sectionLabel">Файлы</span>
@@ -592,6 +657,12 @@ export function RoomPage() {
                 </div>
               ))}
             </div>
+            <div className="fileDropHint">Перетащите сюда файлы .py или .txt</div>
+            {isFileDragActive && (
+              <div className="fileDropOverlay" aria-hidden="true">
+                <span>Отпустите, чтобы добавить файлы</span>
+              </div>
+            )}
           </aside>
         )}
 

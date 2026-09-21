@@ -113,7 +113,7 @@ export function attachRealtime(server: Server) {
         }
 
         if (message.type === 'createFile') {
-          createFile(room, message.name);
+          createFile(room, message.name, typeof message.content === 'string' ? message.content : '');
           broadcast(room, { type: 'filesUpdated', files: serializeFiles(room) });
           return;
         }

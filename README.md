@@ -1,260 +1,227 @@
-# 🚀 Collab Code Platform (CodeRoom)
+# CodeRoom
 
-[![React](https://img.shields.io/badge/Frontend-React%20%2B%20TS%20%2B%20Vite-blue?logo=react)](https://react.dev/)
-[![Node.js](https://img.shields.io/badge/Backend-Node.js%20%2B%20Express%20%2B%20WS-green?logo=node.js)](https://nodejs.org/)
-[![Docker](https://img.shields.io/badge/Sandbox-Docker%20Engine%20API-blue?logo=docker)](https://www.docker.com/)
-[![Yjs](https://img.shields.io/badge/Realtime-Yjs%20%2B%20CRDT-orange)](https://yjs.dev/)
+CodeRoom — веб-приложение для совместного редактирования `.py` и `.txt` файлов в комнатах и запуска Python-кода в одноразовых Docker-контейнерах. Клиенты синхронизируют текст и курсоры через Yjs, а состав комнаты, файловые операции и результаты выполнения — через отдельный JSON WebSocket.
 
-**Collab Code Platform** (или **CodeRoom**) — это современная веб-платформа для совместного написания и безопасного изолированного запуска Python-кода в реальном времени. Проект спроектирован для использования в учебных комнатах, проведения интерактивных интервью и совместной работы.
+## Features
 
----
+- Создание комнаты по короткому идентификатору и приглашение участников ссылкой.
+- Совместное редактирование в Monaco Editor с Yjs CRDT, удалёнными выделениями и awareness-данными пользователей.
+- Создание, импорт перетаскиванием, переименование, удаление и общий выбор файлов `.py` и `.txt`.
+- Запуск выбранного Python-файла вместе с остальными файлами комнаты.
+- Общие для комнаты статусы, `stdout`, `stderr` и exit code; ручная остановка выполнения.
+- Ограничения sandbox: без сети, 128 MiB RAM, 0.5 CPU, настраиваемые timeout и лимит вывода.
+- Светлая/тёмная тема, сохранение имени, размера шрифта и состояния sidebar в browser storage.
+- Автоматическое удаление пустой комнаты через 24 часа.
 
-## ✨ Основные возможности
+Все комнаты и документы хранятся только в памяти backend. Перезапуск процесса удаляет их; учётных записей и разграничения доступа нет.
 
-*   **Совместное редактирование в реальном времени (CRDT):** Реализовано на базе Yjs и Monaco Editor. Все изменения мгновенно синхронизируются между участниками с поддержкой awareness-курсоров (отображение положения курсора и выделений других пользователей с их именами и индивидуальными цветами).
-*   **Виртуальная файловая система:** Возможность создания, переименования и удаления файлов форматов `.py` и `.txt` внутри комнаты. Поддерживается автоопределение подсветки синтаксиса.
-*   **Изолированный Sandbox для запуска кода:** Запуск кода происходит в изолированных Docker-контейнерах с жесткими лимитами на ресурсы (CPU, RAM, сеть, время выполнения).
-*   **Интерактивный контроль выполнения:** Кнопка «Stop» позволяет мгновенно прервать выполнение зависшего или бесконечного скрипта (посылается сигнал отмены в Docker API).
-*   **Синхронный вывод:** Результаты выполнения (`stdout`, `stderr` и статус выполнения) транслируются всем участникам комнаты в реальном времени.
-*   **Самоочистка:** Комнаты, в которых нет активных участников, автоматически удаляются по истечении заданного времени (TTL) для освобождения памяти.
+## Tech stack
 
----
+### Frontend
 
-## 🏗️ Архитектура системы
+- React 18 и React Router 6;
+- TypeScript 5 и Vite 5;
+- Monaco Editor;
+- Yjs, `y-websocket` и `y-monaco`.
 
-Платформа состоит из трех ключевых компонентов:
-1.  **Frontend (React + Vite):** Клиентское SPA, использующее Monaco Editor для редактирования и библиотеку Yjs (`y-monaco`, `y-websocket`) для синхронизации.
-2.  **Backend (Node.js + TS):** Express-сервер, который управляет WebSocket-соединениями, координирует состояние комнат и взаимодействует с Docker Engine API.
-3.  **Runner (Docker):** Легковесный базовый образ на основе `python:3.12-slim`, используемый как песочница для разовых запусков кода.
+### Backend
 
-### Диаграмма взаимодействия компонентов
+- Node.js, TypeScript и Express 4;
+- `ws` для JSON и Yjs WebSocket endpoints;
+- Yjs, `y-protocols` и `lib0`;
+- прямой HTTP-доступ к Docker Engine API через Docker socket.
 
-```mermaid
-graph TD
-    Client1["💻 Frontend Client 1 (React)"]
-    Client2["💻 Frontend Client 2 (React)"]
-    Backend["⚙️ Backend Service (Node.js)"]
-    DockerDaemon["🐋 Docker Daemon"]
-    Sandbox["🔒 python-runner Container"]
-    RoomState[("💾 Room Memory Map")]
+### Data
 
-    Client1 <-->|y-websocket /yjs/:roomId| Backend
-    Client2 <-->|y-websocket /yjs/:roomId| Backend
-    Client1 <-->|JSON Events /ws| Backend
-    Client2 <-->|JSON Events /ws| Backend
+Базы данных, ORM и migrations нет. Room metadata хранится в `Map`, содержимое файлов — в in-memory `Y.Doc`.
 
-    Backend <--> RoomState
-    Backend -->|1. Create & Tar Upload| DockerDaemon
-    DockerDaemon -->|2. Run isolated Cmd| Sandbox
-    Sandbox -->|3. Run Python code| Sandbox
-    Sandbox -.->|4. Stream stdout/stderr| Backend
-    Backend -.->|5. Broadcast runFinished| Client1
-    Backend -.->|5. Broadcast runFinished| Client2
-```
+### Infrastructure
 
----
+- npm и отдельные lock-файлы корня, frontend и backend;
+- Docker/Compose;
+- production frontend на Nginx;
+- внешний Nginx reverse proxy с TLS для `code-room.ru`;
+- GitHub Actions для сборки GHCR-образов и SSH deployment.
 
-## 🔒 Модель безопасности Sandbox
-
-Безопасность выполнения пользовательского кода является приоритетом. Для предотвращения несанкционированного доступа к хост-системе, утечек данных и DoS-атак, запуск Python-файлов реализован следующим образом:
-
-1.  **Прямое взаимодействие с Docker API:** Backend общается с локальным сокетом Docker (`/var/run/docker.sock` или Named Pipe на Windows) напрямую через протокол HTTP, минуя вызовы CLI-утилит (shell).
-2.  **In-Memory сборка архива:** Файлы пользователя не сохраняются на диск хоста перед запуском. Backend упаковывает все файлы комнаты в `.tar` архив прямо в оперативной памяти и загружает его в контейнер через API-метод `/containers/:id/archive`.
-3.  **Изоляция сети:** Для контейнера выполнения устанавливается режим `NetworkMode: "none"`. Код не может совершать внешние запросы или скачивать сторонний софт.
-4.  **Ограничение ресурсов:**
-    *   **RAM:** Ограничена до **128 MB** (защита от утечек памяти).
-    *   **CPU:** Ограничен до **0.5 CPU** (500,000,000 NanoCPUs, защита от 100% утилизации ядер процессора).
-5.  **Таймаут выполнения:** Скрипт принудительно завершается через **15 секунд** (настраивается через `RUN_TIMEOUT_MS`).
-6.  **Лимит вывода:** Вывод `stdout`/`stderr` ограничен до **64 KB** (настраивается через `RUN_OUTPUT_LIMIT_BYTES`). При превышении выполнение останавливается.
-7.  **Очистка контейнеров:** Контейнер автоматически удаляется (`force=1&v=1`) сразу после завершения работы программы.
-
-> [!WARNING]
-> В продакшене проброс `/var/run/docker.sock` внутрь backend-контейнера предоставляет backend-процессу полные права администратора над Docker-демоном хоста. В публичных проектах рекомендуется запускать Docker Runner на отдельном изолированном виртуальном сервере или использовать gVisor/Kata Containers для дополнительной изоляции.
-
----
-
-## 📂 Структура проекта
+## Project structure
 
 ```text
-CodeRoom/
-├── backend/                  # Node.js + TypeScript сервер
+.
+├── backend/
 │   ├── src/
-│   │   ├── index.ts          # Express инициализация, REST API
-│   │   ├── rooms.ts          # Логика комнат, файлов, TTL таймеров
-│   │   ├── realtime.ts       # Обработка WebSocket (JSON API и Yjs протоколы)
-│   │   ├── runner.ts         # Интеграция с Docker Engine API, сборка .tar, запуск песочниц
-│   │   └── types.ts          # Общие типы данных TypeScript
-│   ├── Dockerfile
-│   └── tsconfig.json
-│
-├── frontend/                 # Клиентское React-приложение (Vite)
+│   │   ├── index.ts       # Express entry point и REST API
+│   │   ├── rooms.ts       # in-memory комнаты, файлы, Yjs docs и TTL
+│   │   ├── realtime.ts    # JSON WebSocket, Yjs WebSocket и broadcasts
+│   │   ├── runner.ts      # Docker Engine API и lifecycle sandbox
+│   │   └── types.ts       # серверные модели и client events
+│   └── Dockerfile*        # development/production образы backend
+├── frontend/
 │   ├── src/
-│   │   ├── pages/            # Страницы приложения (HomePage, RoomPage)
-│   │   ├── config.ts         # Конфигурация WebSocket/API URL
-│   │   ├── styles.css        # Глобальные стили (темная тема, кастомный UI)
-│   │   └── main.tsx
-│   ├── index.html
-│   ├── nginx.conf            # Конфигурация Nginx для Docker-сборки
-│   └── vite.config.ts
-│
-├── runner/                   # Docker-образ для выполнения кода
-│   └── Dockerfile            # Базируется на python:3.12-slim
-│
-├── docker-compose.yml        # Конфигурация для локальной разработки
-├── docker-compose.prod.yml   # Конфигурация для продакшена
-└── package.json              # Скрипты запуска проекта
+│   │   ├── pages/         # HomePage и RoomPage
+│   │   ├── main.tsx       # React entry point и routing
+│   │   ├── config.ts      # REST/WS URL
+│   │   ├── theme.tsx      # theme context
+│   │   └── types.ts       # клиентские модели и server events
+│   ├── nginx.conf         # production SPA и внутренний proxy
+│   └── Dockerfile*        # development/production образы frontend
+├── runner/Dockerfile      # Python 3.12 runner image
+├── docker-compose.yml     # локальный Docker development stack
+├── docker-compose.prod.yml
+├── nginx.code-room.conf   # внешний TLS reverse proxy
+├── scripts/update.sh      # server update procedure
+├── DEPLOY.md              # production runbook
+└── .github/workflows/     # image build и SSH deploy
 ```
 
----
+## Requirements
 
-## 🛠️ Инструкция по запуску
+Для запуска напрямую на хосте нужны:
 
-### Требования
-*   Установленный **Node.js** (v18+)
-*   Установленный **Docker** и запущенный Docker-демон (Docker Desktop на Windows/macOS должен быть активен)
+- Node.js и npm. Версия Node.js для host development в `package.json` не закреплена; Dockerfiles используют `node:24-slim`.
+- Запущенный Docker Engine и доступ backend к Docker socket.
+- Образ `collab-python-runner`, если backend запускается с настройками по умолчанию.
 
-### Быстрый запуск (Рекомендуемый)
+Для Compose-варианта нужны Docker и Docker Compose plugin. Runner основан на `python:3.12-slim`.
 
-Для автоматической установки и параллельного запуска frontend и backend в режиме разработки:
+## Installation
 
-1.  Соберите образ ранера:
-    ```bash
-    docker build -t collab-python-runner ./runner
-    ```
-2.  Установите все зависимости:
-    ```bash
-    npm run install:all
-    ```
-3.  Запустите проекты:
-    ```bash
-    npm run dev
-    ```
+Установите зависимости всех трёх npm-пакетов из корня:
 
-После этого:
-*   Frontend будет доступен по адресу: `http://localhost:5173`
-*   Backend будет доступен по адресу: `http://localhost:4000`
+```bash
+npm ci
+npm ci --prefix backend
+npm ci --prefix frontend
+```
 
----
+Существующий helper `npm run install:all` выполняет `npm install` только в `backend/` и `frontend/`; root dependency `concurrently` всё равно должна быть установлена отдельно.
 
-### Альтернативный ручной запуск по компонентам
+Для прямого запуска backend соберите его runner image:
 
-#### 1. Сборка Sandbox Runner
 ```bash
 docker build -t collab-python-runner ./runner
 ```
 
-#### 2. Запуск Backend
+## Configuration
+
+### Backend environment
+
+Backend читает переменные из `process.env`; библиотека загрузки `.env` не подключена. Передавайте их через shell, process manager или Compose.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `PORT` | `4000` | HTTP/WebSocket port |
+| `ALLOWED_ORIGINS` | empty | Список разрешённых CORS origins через запятую; `*` запрещён. При пустом значении CORS middleware не подключается |
+| `RUNNER_IMAGE` | `collab-python-runner` | Docker image для каждого запуска |
+| `DOCKER_SOCKET` | `/var/run/docker.sock` на Unix, `//./pipe/docker_engine` на Windows | Docker Engine socket |
+| `RUN_TIMEOUT_MS` | `15000` | Timeout одного запуска в миллисекундах |
+| `RUN_OUTPUT_LIMIT_BYTES` | `65536` | Общий лимит `stdout` + `stderr` в байтах |
+
+### Frontend environment
+
+Шаблон находится в `frontend/.env.example`. Значения необязательны: локальный Vite server проксирует стандартные same-origin пути на backend.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `VITE_API_BASE_URL` | `/api` | REST API base URL |
+| `VITE_WS_BASE_URL` | текущий browser host с `ws://` или `wss://` | Base URL для `/ws` и `/yjs/:roomId` |
+
+`VITE_*` значения встраиваются в frontend bundle и не должны содержать секреты. Не коммитьте реальные credentials или `.env` файлы.
+
+## Development
+
+После установки зависимостей и сборки `collab-python-runner` запустите оба приложения:
+
 ```bash
-cd backend
-npm install
 npm run dev
 ```
 
-#### 3. Запуск Frontend
+- Frontend: `http://localhost:5173`.
+- Backend и health endpoint: `http://localhost:4000`, `http://localhost:4000/health`.
+- Vite проксирует `/api`, `/ws` и `/yjs` на backend.
+
+Для раздельного запуска доступны:
+
 ```bash
-cd frontend
-npm install
-npm run dev
+npm run dev:backend
+npm run dev:frontend
 ```
 
----
+Алиасы `dev:server` и `dev:client` запускают те же backend и frontend scripts.
 
-### Запуск через Docker Compose (Локально)
+## Docker
 
-Вы можете запустить всю инфраструктуру одной командой. Перед этим убедитесь, что вы собрали runner:
+Development stack запускается так:
+
 ```bash
-docker build -t collab-python-runner ./runner
 docker compose up --build
 ```
 
----
+`docker-compose.yml` монтирует исходники, запускает оба dev server и публикует порты `4000` и `5173`. Сервис `runner-image` предварительно загружает `dh-mirror.gitverse.ru/library/python:3.12-slim`; это же имя передаётся backend как `RUNNER_IMAGE`. Docker socket хоста смонтирован в backend.
 
-## ⚙️ Конфигурация (Окружение)
+Остановка стека:
 
-### Backend (`backend/.env` или переменные окружения Compose)
+```bash
+docker compose down
+```
 
-| Переменная | Описание | Значение по умолчанию |
-| :--- | :--- | :--- |
-| `PORT` | Порт запуска Express сервера | `4000` |
-| `ALLOWED_ORIGINS` | Необязательный список origins для cross-origin разработки, через запятую | Не задан (CORS выключен) |
-| `RUNNER_IMAGE` | Имя Docker-образа для песочницы | `collab-python-runner` |
-| `DOCKER_SOCKET` | Путь к сокету Docker API | Windows: Named Pipe, Linux/macOS: `/var/run/docker.sock` |
-| `RUN_TIMEOUT_MS` | Максимальное время выполнения кода (мс) | `15000` (15 сек) |
-| `RUN_OUTPUT_LIMIT_BYTES` | Лимит размера вывода программы (байт) | `65536` (64 KB) |
+## Build
 
-### Frontend (`frontend/.env` или Vite ENV)
+Полная production-сборка TypeScript и frontend assets:
 
-| Переменная | Описание | Значение по умолчанию |
-| :--- | :--- | :--- |
-| `VITE_API_BASE_URL` | Базовый URL REST API; можно переопределить локально | `/api` |
-| `VITE_WS_BASE_URL` | Базовый WebSocket URL; можно переопределить локально | Текущий host и автоматический `ws://`/`wss://` |
+```bash
+npm run build
+```
 
----
+Отдельные сборки:
 
-## 📡 API и протоколы взаимодействия
+```bash
+npm run build --prefix backend
+npm run build --prefix frontend
+```
 
-### REST API Эндпоинты
+Результаты создаются в `backend/dist/` и `frontend/dist/`. Собранный backend запускается командой `npm run start --prefix backend`; production frontend обслуживается Nginx из `frontend/Dockerfile.prod`.
 
-*   `GET /health` — Проверка жизнеспособности сервера. Возвращает `{ "ok": true }`.
-*   `POST /api/rooms` — Инициализирует новую комнату. Возвращает идентификатор комнаты `{ "roomId": "8-char-id" }`.
-*   `GET /api/rooms/:roomId` — Получение полной информации о текущем состоянии комнаты (активный файл, список файлов, контент, пользователи, последний запуск).
-*   `POST /api/rooms/:roomId/run` — Запуск кода выбранного файла. Принимает JSON `{ "fileId": "file-id" }`.
+## Tests
 
-### WebSocket протоколы
+Автоматических тестов и `test` script в репозитории сейчас нет.
 
-#### 1. Yjs Sync WS (`/yjs/:roomId`)
-Использует бинарный протокол `y-protocols` (`sync` и `awareness`) для посимвольной синхронизации контента Monaco Editor и отображения удаленных курсоров.
+## Lint / typecheck
 
-#### 2. JSON Events WS (`/ws`)
-Координирует структуру комнаты, состав участников и процессы запуска кода.
+Lint-конфигурации и `lint` script нет. Отдельного `typecheck` script тоже нет: проверка TypeScript входит в build обоих пакетов (`tsc` для backend, `tsc && vite build` для frontend).
 
-**Формат сообщений клиента (Client to Server):**
-*   `joinRoom`: `{ type: "joinRoom", roomId, clientId, name, color }`
-*   `leaveRoom`: `{ type: "leaveRoom", roomId, clientId }`
-*   `createFile`: `{ type: "createFile", roomId, name }`
-*   `renameFile`: `{ type: "renameFile", roomId, fileId, name }`
-*   `deleteFile`: `{ type: "deleteFile", roomId, fileId }`
-*   `selectFile`: `{ type: "selectFile", roomId, fileId }`
-*   `runCode`: `{ type: "runCode", roomId, fileId, content? }`
-*   `stopCode`: `{ type: "stopCode", roomId }`
+## Runtime interfaces
 
-**Формат сообщений сервера (Server to Client):**
-*   `roomState`: Возвращает актуальные файлы и метаданные при подключении.
-*   `usersUpdated`: Обновляет список активных участников.
-*   `filesUpdated`: Сигнализирует об изменении структуры файлов (создан/удален/переименован).
-*   `activeFileUpdated`: Указывает текущий открытый файл.
-*   `runStarted` / `runFinished`: Транслирует начало и результат работы песочницы.
-*   `error`: Уведомления об ошибках валидации или сбоях.
+- `GET /health` — health response `{ "ok": true }`.
+- `POST /api/rooms` — создаёт комнату.
+- `GET /api/rooms/:roomId` — возвращает room state.
+- `POST /api/rooms/:roomId/run` — запускает файл по `{ "fileId": string }`.
+- `/ws` — JSON events для join/leave, file operations, active file и execution.
+- `/yjs/:roomId` — бинарные Yjs sync и awareness messages.
 
----
+Подробные цепочки сообщений и состояния описаны в [ARCHITECTURE.md](ARCHITECTURE.md).
 
-## 🚢 Деплой на Production (Стенд)
+## Deployment
 
-Сборка для эксплуатации запускается через `docker-compose.prod.yml`.
+Подтверждённый production-вариант использует `docker-compose.prod.yml`: backend публикуется только на `127.0.0.1:4000`, frontend Nginx — на `127.0.0.1:8080`. Внешний `nginx.code-room.conf` завершает TLS для `code-room.ru`, направляет `/` во frontend, а `/api`, `/ws` и `/yjs` — в backend.
 
-1.  Соберите runner-контейнер на целевом сервере:
-    ```bash
-    docker build -t collab-python-runner ./runner
-    ```
-2.  Проверьте конфигурацию: `docker compose -f docker-compose.prod.yml config`.
-3.  Запустите стек:
-    ```bash
-    docker compose -f docker-compose.prod.yml up -d --build
-    ```
+Перед production Compose должен существовать image `collab-python-runner`:
 
-### 🔒 Настройка Reverse Proxy (Nginx)
+```bash
+docker build -t collab-python-runner ./runner
+docker compose -f docker-compose.prod.yml config
+docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.prod.yml logs --tail=100 backend frontend
+```
 
-Используйте готовый файл `nginx.code-room.conf`: он маршрутизирует `/` на
-frontend, сохраняет `/api/*` при передаче в backend и отдельно проксирует `/ws`
-и `/yjs/*` с WebSocket-заголовками. Полные команды установки, проверки и
-перезапуска приведены в `DEPLOY.md`.
+`scripts/update.sh` автоматизирует pull, временную maintenance-страницу, сборку runner и приложения. `start-prod.sh` только поднимает Compose и предполагает, что runner image уже существует. Полная настройка Nginx, TLS и проверки приведены в [DEPLOY.md](DEPLOY.md).
 
----
+При push в `main` workflow `deploy.yml` запускает update script на сервере по SSH. Отдельный `build-images.yml` публикует backend/frontend/runner images в GHCR; текущий production Compose эти GHCR images не использует.
 
-## 🗺️ Что можно улучшить (Roadmap)
+> Backend-контейнер получает Docker socket хоста. Это даёт процессу backend высокие полномочия над Docker daemon; рассматривайте это как существенную границу доверия, а не как полноценную защиту хоста от скомпрометированного backend.
 
-*   [ ] **Персистентность данных:** Интеграция базы данных (например, PostgreSQL/Redis) для сохранения состояния файлов и комнат после перезагрузки бэкенда.
-*   [ ] **Авторизация пользователей:** Добавление системы учетных записей (OAuth / JWT) и разделения ролей (Создатель / Зритель / Редактор).
-*   [ ] **Поддержка других языков:** Расширение линейки ранеров для поддержки JavaScript (Node.js), Go, Bash.
-*   [ ] **Автовосстановление WebSocket:** Реализация автоматического переподключения (reconnect/backoff) при сбоях сети с сохранением оффлайн-изменений.
-*   [ ] **Усиленный Sandbox:** Интеграция виртуализации на уровне микро-ВМ (например, Firecracker или gVisor) для безопасного выполнения в публичной среде.
+## Documentation
+
+- [ARCHITECTURE.md](ARCHITECTURE.md) — фактические компоненты, данные, протоколы и ограничения.
+- [AGENTS.md](AGENTS.md) — компактные правила работы AI/Codex-агентов с репозиторием.
+- [DEPLOY.md](DEPLOY.md) — production runbook для Compose и Nginx.
