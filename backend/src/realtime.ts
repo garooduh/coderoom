@@ -64,6 +64,26 @@ export function attachRealtime(server: Server) {
   const apiWss = new WebSocketServer({ noServer: true });
   const yWss = new WebSocketServer({ noServer: true });
 
+  const alive = new Set<WebSocket>();
+  for (const wss of [apiWss, yWss]) {
+    wss.on('connection', (ws) => {
+      alive.add(ws);
+      ws.on('pong', () => alive.add(ws));
+      ws.on('close', () => alive.delete(ws));
+      ws.on('error', () => ws.terminate());
+    });
+  }
+  const heartbeat = setInterval(() => {
+    for (const wss of [apiWss, yWss]) {
+      for (const ws of wss.clients) {
+        if (!alive.delete(ws)) ws.terminate();
+        else if (ws.readyState === WebSocket.OPEN) ws.ping();
+      }
+    }
+  }, 15000);
+  heartbeat.unref();
+  server.on('close', () => clearInterval(heartbeat));
+
   server.on('upgrade', (request, socket, head) => {
     const url = new URL(request.url ?? '/', 'http://localhost');
     if (url.pathname === '/ws') {
@@ -93,9 +113,14 @@ export function attachRealtime(server: Server) {
         if (message.type === 'joinRoom') {
           const name = message.name.trim();
           if (!name) throw new Error('Имя пользователя не может быть пустым');
+          if (joinedRoomId && (joinedRoomId !== room.roomId || joinedClientId !== message.clientId)) {
+            throw new Error('Соединение уже присоединено к комнате');
+          }
           joinedRoomId = room.roomId;
           joinedClientId = message.clientId;
+          const previous = room.clients.get(message.clientId);
           room.clients.set(message.clientId, ws);
+          if (previous && previous !== ws) previous.close();
           addUser(room, {
             clientId: message.clientId,
             name,
@@ -106,8 +131,12 @@ export function attachRealtime(server: Server) {
           return;
         }
 
+        if (joinedRoomId !== room.roomId || !joinedClientId || room.clients.get(joinedClientId) !== ws) {
+          throw new Error('Сначала присоединитесь к комнате');
+        }
+
         if (message.type === 'leaveRoom') {
-          removeUser(room, message.clientId);
+          removeUser(room, joinedClientId);
           broadcast(room, { type: 'usersUpdated', users: room.users });
           return;
         }
@@ -158,7 +187,7 @@ export function attachRealtime(server: Server) {
     ws.on('close', () => {
       if (!joinedRoomId || !joinedClientId) return;
       const room = getRoom(joinedRoomId);
-      if (!room) return;
+      if (!room || room.clients.get(joinedClientId) !== ws) return;
       removeUser(room, joinedClientId);
       broadcast(room, { type: 'usersUpdated', users: room.users });
     });
@@ -234,6 +263,10 @@ function getYRoom(roomId: string): YRoom {
 }
 
 function setupYjsConnection(ws: WebSocket, roomId: string) {
+  if (!getRoom(roomId)) {
+    ws.close(1008, 'Комната не найдена');
+    return;
+  }
   const yRoom = getYRoom(roomId);
   yRoom.conns.set(ws, new Set());
 

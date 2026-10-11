@@ -87,7 +87,11 @@ Runner возвращает `RunResult`, а не выбрасывает боль
 
 ### Entry point and routing
 
-`frontend/src/main.tsx` монтирует приложение в `#root`, оборачивает его в `React.StrictMode`, `ThemeProvider` и `BrowserRouter`. Маршрутов два:
+`frontend/src/main.tsx` монтирует приложение в `#root`, оборачивает его в `React.StrictMode`, `ThemeProvider` и `BrowserRouter`.
+
+Перед монтированием `main.tsx` передаёт локальный Monaco в React loader и подключает editor worker через Vite. Редактор и `y-monaco` используют один экземпляр из npm-зависимостей; версия с CDN не загружается.
+
+Маршрутов два:
 
 - `/` → `HomePage`;
 - `/room/:roomId` → `RoomPage`.
@@ -183,6 +187,8 @@ HomePage button
 ```
 
 Yjs provider создаётся после ввода display name параллельно с JSON socket. Эти connections решают разные задачи.
+
+Оба WebSocket endpoint проверяются server ping/pong каждые 15 секунд; соединение без ответа закрывается на следующей проверке. При повторном join с тем же client id новое соединение заменяет старое, а закрытие старого не удаляет нового участника. JSON commands доступны после получения `roomState`; редактирование и запуск доступны после синхронизации Yjs и блокируются при потере его соединения. Initial REST response используется только до входа, чтобы запоздавший ответ не перезаписал актуальный WebSocket state.
 
 ### 2. Collaborative edit
 

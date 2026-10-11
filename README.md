@@ -24,6 +24,8 @@ CodeRoom — веб-приложение для совместного реда�
 - Monaco Editor;
 - Yjs, `y-websocket` и `y-monaco`.
 
+Monaco и его editor worker собираются вместе с frontend из зафиксированной в lock-файле версии. React-редактор и Yjs binding используют один экземпляр Monaco, без отдельной загрузки редактора с CDN.
+
 ### Backend
 
 - Node.js, TypeScript и Express 4;

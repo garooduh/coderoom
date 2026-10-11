@@ -182,10 +182,11 @@ export function RoomPage() {
   const activeFile = room?.files.find((file) => file.id === room.activeFileId) || null;
   const activeModelReady = Boolean(activeFile && editorModelReady && editorModelFileId === activeFile.id);
   const editorReady = Boolean(activeFile && initialSyncComplete && activeModelReady);
-  const runReady = Boolean(activeFile && activeModelReady && socketReady);
+  const runReady = Boolean(editorReady && socketReady);
   const showEditorLoading = Boolean(joinedName && activeFile && !firstEditorLoadComplete && (!initialSyncComplete || !editorModelReady));
 
   useEffect(() => {
+    if (joinedName) return;
     let cancelled = false;
     fetch(`${API_BASE_URL}/rooms/${roomId}`)
       .then(async (response) => {
@@ -204,7 +205,7 @@ export function RoomPage() {
     return () => {
       cancelled = true;
     };
-  }, [roomId]);
+  }, [roomId, joinedName]);
 
   useEffect(() => {
     if (!joinedName || !roomId) return;
@@ -231,9 +232,9 @@ export function RoomPage() {
     }, 5000);
 
     const handleProviderSync = (isSynced: boolean) => {
+      setInitialSyncComplete(isSynced && provider.wsconnected);
       if (isSynced) {
         window.clearTimeout(syncTimeout);
-        setInitialSyncComplete(true);
         setError((current) => (current === yjsConnectionError ? '' : current));
       }
     };
@@ -241,8 +242,8 @@ export function RoomPage() {
     provider.on('sync', handleProviderSync);
 
     const handleProviderStatus = ({ status }: { status: 'connected' | 'disconnected' | 'connecting' }) => {
-      if (status === 'connected') {
-        setError((current) => (current === yjsConnectionError ? '' : current));
+      if (status !== 'connected') {
+        setInitialSyncComplete(false);
       }
     };
 
@@ -281,14 +282,16 @@ export function RoomPage() {
       wsRef.current = ws;
 
       ws.onopen = () => {
+        if (closedByCleanup || wsRef.current !== ws) return;
         reconnectAttempt = 0;
-        setSocketReady(true);
         ws.send(JSON.stringify({ type: 'joinRoom', roomId, clientId, name: joinedName, color: userColor }));
       };
 
       ws.onmessage = (event) => {
+        if (closedByCleanup || wsRef.current !== ws) return;
         const message = JSON.parse(event.data) as ServerMessage;
         if (message.type === 'roomState') {
+          setSocketReady(true);
           setRoom(message.room);
           setRunResult(message.room.lastRun);
         }
@@ -402,7 +405,7 @@ export function RoomPage() {
 
   const send = (payload: RoomCommand) => {
     setError('');
-    if (wsRef.current?.readyState !== WebSocket.OPEN) {
+    if (!socketReady || wsRef.current?.readyState !== WebSocket.OPEN) {
       setError('WebSocket не подключен');
       return;
     }
