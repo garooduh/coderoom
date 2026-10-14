@@ -20,7 +20,7 @@ Browser
                                   disposable Python container
 ```
 
-В production browser сначала обращается к внешнему Nginx из `nginx.code-room.conf`. Он завершает TLS и отправляет `/` во frontend Nginx на `127.0.0.1:8080`, а `/api`, `/ws`, `/yjs` и `/health` — напрямую в backend на `127.0.0.1:4000`.
+В production browser сначала обращается к внешнему Nginx из `nginx.code-room.conf`, работающему в отдельном LXC. Он завершает TLS и отправляет весь трафик на frontend Nginx в CodeRoom LXC (`192.168.1.101:8080`); frontend обслуживает SPA и проксирует `/api`, `/ws`, `/yjs` и `/health` в backend по Compose-сети.
 
 Backend является единственным источником room metadata и Yjs state. Состояние не переживает его перезапуск и не разделяется между replicas.
 
@@ -298,7 +298,7 @@ Vite development proxy направляет `/api`, `/ws` и `/yjs` на `localh
 
 Development Compose запускает Vite и backend с bind mounts, публикует `5173`/`4000`, монтирует Docker socket и использует зеркальный `python:3.12-slim` как runner image.
 
-Production Compose multi-stage собирает backend и frontend. Frontend assets обслуживает Nginx. Оба host ports привязаны к loopback; внешний Nginx обеспечивает public TLS routing. Backend по-прежнему получает host Docker socket.
+Production Compose multi-stage собирает backend и frontend. Frontend assets обслуживает Nginx. Backend port привязан к loopback, а frontend port `8080` доступен внешнему Nginx через внутреннюю сеть между LXC; firewall должен ограничивать этот порт локальной сетью. Backend по-прежнему получает host Docker socket.
 
 `runner/Dockerfile` определяет локальный image `collab-python-runner`, который явно собирают `scripts/update.sh` и инструкция `DEPLOY.md`.
 

@@ -45,17 +45,19 @@ docker compose -f docker-compose.prod.yml ps
 docker compose -f docker-compose.prod.yml logs --tail=100 backend frontend
 ```
 
-Backend и frontend публикуются только на loopback-портах `4000` и `8080`.
-Docker socket, смонтированный в backend для запуска пользовательского кода,
-требует отдельного усиления безопасности на публичном сервере.
+Backend публикуется только на loopback-порту `4000`. Frontend публикуется на
+порту `8080` LXC-контейнера CodeRoom, чтобы отдельный LXC с внешним Nginx мог
+обращаться к нему по внутренней сети. Доступ к `8080` должен быть ограничен
+локальной сетью или firewall. Docker socket, смонтированный в backend для
+запуска пользовательского кода, требует отдельного усиления безопасности на
+публичном сервере.
 
 ## Nginx и HTTPS
 
-Готовая конфигурация находится в `nginx.code-room.conf`. Она направляет `/` на
-frontend (`127.0.0.1:8080`), сохраняет `/api/*` для backend
-(`127.0.0.1:4000`) и проксирует `/ws` и `/yjs/*` с WebSocket-заголовками. Во всех
-proxy locations передаются `Host`, `X-Real-IP`, `X-Forwarded-For` и
-`X-Forwarded-Proto`.
+Внешний Nginx работает в отдельном LXC и направляет весь трафик CodeRoom на
+frontend (`192.168.1.101:8080`). Внутренний Nginx frontend обслуживает SPA и
+проксирует `/api`, `/health`, `/ws` и `/yjs` в backend по Compose-сети.
+WebSocket-заголовки и forwarded headers передаются на обоих proxy-уровнях.
 
 При существующих сертификатах Let's Encrypt:
 

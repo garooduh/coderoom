@@ -204,7 +204,7 @@ Lint-конфигурации и `lint` script нет. Отдельного `typ
 
 ## Deployment
 
-Подтверждённый production-вариант использует `docker-compose.prod.yml`: backend публикуется только на `127.0.0.1:4000`, frontend Nginx — на `127.0.0.1:8080`. Внешний `nginx.code-room.conf` завершает TLS для `code-room.ru`, направляет `/` во frontend, а `/api`, `/ws` и `/yjs` — в backend.
+Подтверждённый production-вариант использует `docker-compose.prod.yml`: backend публикуется только на `127.0.0.1:4000`, а frontend Nginx — на порту `8080` LXC CodeRoom. Внешний Nginx в отдельном LXC завершает TLS для `code-room.ru` и направляет трафик во frontend; тот обслуживает SPA и проксирует `/api`, `/health`, `/ws` и `/yjs` в backend по Compose-сети.
 
 Перед production Compose должен существовать image `collab-python-runner`:
 

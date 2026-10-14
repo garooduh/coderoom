@@ -5,6 +5,9 @@ services:
     restart: "no"
 
   backend:
+    mem_limit: 512m
+    memswap_limit: 768m
+    pids_limit: 128
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
@@ -28,6 +31,6 @@ services:
       dockerfile: Dockerfile.prod
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8080:80"
+      - "8080:80"
     depends_on:
       - backend
