@@ -137,6 +137,7 @@ export function RoomPage() {
   const [nameInput, setNameInput] = useState(localStorage.getItem('displayName') || '');
   const [joinedName, setJoinedName] = useState('');
   const [room, setRoom] = useState<RoomState | null>(null);
+  const [activeFileId, setActiveFileId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [socketReady, setSocketReady] = useState(false);
   const [runResult, setRunResult] = useState<RunResult>(emptyRun);
@@ -179,11 +180,18 @@ export function RoomPage() {
   };
 
 
-  const activeFile = room?.files.find((file) => file.id === room.activeFileId) || null;
+  const activeFile = room?.files.find((file) => file.id === activeFileId) || null;
   const activeModelReady = Boolean(activeFile && editorModelReady && editorModelFileId === activeFile.id);
   const editorReady = Boolean(activeFile && initialSyncComplete && activeModelReady);
   const runReady = Boolean(editorReady && socketReady);
   const showEditorLoading = Boolean(joinedName && activeFile && !firstEditorLoadComplete && (!initialSyncComplete || !editorModelReady));
+
+  useEffect(() => {
+    setActiveFileId((currentFileId) => {
+      if (currentFileId && room?.files.some((file) => file.id === currentFileId)) return currentFileId;
+      return room?.files[0]?.id ?? null;
+    });
+  }, [room?.files]);
 
   useEffect(() => {
     if (joinedName) return;
@@ -297,7 +305,6 @@ export function RoomPage() {
         }
         if (message.type === 'usersUpdated') setRoom((prev) => (prev ? { ...prev, users: message.users } : prev));
         if (message.type === 'filesUpdated') setRoom((prev) => (prev ? { ...prev, files: message.files } : prev));
-        if (message.type === 'activeFileUpdated') setRoom((prev) => (prev ? { ...prev, activeFileId: message.activeFileId } : prev));
         if (message.type === 'runStarted' || message.type === 'runFinished') setRunResult(message.result);
         if (message.type === 'error') setError(message.message);
       };
@@ -520,6 +527,22 @@ export function RoomPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  useEffect(() => {
+    function handleCommentShortcut(event: KeyboardEvent) {
+      const editor = editorRef.current;
+      const isCommentShortcut =
+        (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.code === 'Slash';
+      if (!isCommentShortcut || !editor?.hasTextFocus()) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      void editor.getAction('editor.action.commentLine')?.run();
+    }
+
+    window.addEventListener('keydown', handleCommentShortcut, true);
+    return () => window.removeEventListener('keydown', handleCommentShortcut, true);
+  }, []);
+
   const handleEditorBeforeMount: BeforeMount = (monacoInstance) => {
     defineEditorThemes(monacoInstance);
   };
@@ -639,8 +662,8 @@ export function RoomPage() {
             </div>
             <div className="fileList">
               {room?.files.map((file) => (
-                <div className={`fileItem ${file.id === room.activeFileId ? 'active' : ''}`} key={file.id}>
-                  <button className="fileName" onClick={() => send({ type: 'selectFile', fileId: file.id })}>
+                <div className={`fileItem ${file.id === activeFileId ? 'active' : ''}`} key={file.id}>
+                  <button className="fileName" onClick={() => setActiveFileId(file.id)}>
                     <span className="fileIcon">{file.language === 'python' ? 'PY' : 'TXT'}</span>
                     <span>{file.name}</span>
                   </button>

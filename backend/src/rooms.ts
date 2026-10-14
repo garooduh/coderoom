@@ -106,7 +106,6 @@ export function createRoom() {
   const room: Room = {
     roomId,
     files: [mainFile],
-    activeFileId: fileId,
     users: [],
     clients: new Map(),
     lastRun: { ...defaultRun }
@@ -125,7 +124,6 @@ export function serializeRoom(room: Room) {
   return {
     roomId: room.roomId,
     files: serializeFiles(room),
-    activeFileId: room.activeFileId,
     users: room.users,
     lastRun: room.lastRun
   };
@@ -185,12 +183,4 @@ export function deleteFile(room: Room, fileId: string) {
   const file = room.files.find((item) => item.id === fileId);
   if (!file) throw new Error('Файл не найден');
   room.files = room.files.filter((item) => item.id !== fileId);
-  if (room.activeFileId === fileId) room.activeFileId = room.files[0].id;
-}
-
-export function selectFile(room: Room, fileId: string) {
-  const file = room.files.find((item) => item.id === fileId);
-  if (!file) throw new Error('Файл не найден');
-  room.activeFileId = fileId;
-  return file;
 }

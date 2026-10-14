@@ -60,7 +60,7 @@ Backend является единственным источником room meta
 
 `rooms.ts` владеет двумя process-local maps:
 
-- `rooms: Map<string, Room>` — room metadata, файлы, active file, пользователи, connections и последний запуск;
+- `rooms: Map<string, Room>` — room metadata, файлы, пользователи, connections и последний запуск;
 - `docs: Map<string, Y.Doc>` — CRDT-текст каждого файла по ключу `file:<fileId>`.
 
 Новая комната получает восьмисимвольный `nanoid`, файл `main.py` с отдельным десятисимвольным id и исходным `print("Hello, world!")`. Пустая комната ставится на удаление через 24 часа. Присоединение отменяет timer; после ухода всех пользователей и закрытия clients timer создаётся снова. Удаление комнаты закрывает connections, уничтожает `Y.Doc`, awareness state и активный запуск.
@@ -121,7 +121,7 @@ Server-derived metadata хранится в React state `RoomPage` и замен
 
 Theme хранится в React context. `localStorage` хранит theme, display name, font size и sidebar state; `sessionStorage` — client id и случайно выбранный цвет пользователя.
 
-`activeFileId` — серверное поле комнаты, поэтому выбор файла broadcast всем участникам, а не хранится отдельно для каждого browser.
+Выбранный файл хранится в локальном state `RoomPage`, поэтому каждый browser может независимо переключать файлы. Если открытый файл удалён другим участником, клиент выбирает первый оставшийся файл.
 
 ### API access and errors
 
@@ -144,9 +144,9 @@ Theme хранится в React context. `localStorage` хранит theme, disp
 
 ### Business and domain logic
 
-`rooms.ts` реализует создание/поиск/удаление комнаты, membership, file-name rules, file mutations, active-file selection, serialization и TTL.
+`rooms.ts` реализует создание/поиск/удаление комнаты, membership, file-name rules, file mutations, serialization и TTL.
 
-`realtime.ts` интерпретирует `ClientMessage`, вызывает room functions и рассылает `roomState`, `usersUpdated`, `filesUpdated`, `activeFileUpdated`, `runStarted`, `runFinished` или `error`. Один room одновременно допускает только один активный запуск.
+`realtime.ts` интерпретирует `ClientMessage`, вызывает room functions и рассылает `roomState`, `usersUpdated`, `filesUpdated`, `runStarted`, `runFinished` или `error`. Один room одновременно допускает только один активный запуск.
 
 ### Persistence
 
@@ -247,7 +247,7 @@ Run button / Ctrl+Enter
 
 - Frontend: file list, Monaco model switching and Yjs binding in `RoomPage.tsx`.
 - Backend: file metadata/validation in `rooms.ts`, file events and Yjs protocol in `realtime.ts`.
-- Models/API: `RoomFile`, `filesUpdated`, `activeFileUpdated`, `/yjs/:roomId`.
+- Models/API: `RoomFile`, `filesUpdated`, `/yjs/:roomId`.
 
 Supported languages are only `python` and `plaintext`, derived from `.py` and `.txt` extensions.
 
@@ -261,7 +261,7 @@ Supported languages are only `python` and `plaintext`, derived from `.py` and `.
 
 СУБД не используется. Все основные сущности существуют только в памяти:
 
-- `Room` содержит files, один общий active file, users, clients и last run;
+- `Room` содержит files, users, clients и last run;
 - `Y.Doc` содержит `Y.Text` на каждый file id;
 - `YRoom` связывает document с awareness и Yjs connections;
 - `activeRuns` связывает room id с cancellation controller.
@@ -276,7 +276,7 @@ Frontend вызывает REST через `fetch`, JSON WebSocket через nat
 
 ## Authentication and authorization
 
-Аутентификация и авторизация не реализованы. Room id фактически является единственным locator. Display name, client id и цвет задаются клиентом; backend не выдаёт session/token и не проверяет ownership или роли. Любой подключённый клиент, знающий room id, может менять файлы, выбирать активный файл, запускать и останавливать код.
+Аутентификация и авторизация не реализованы. Room id фактически является единственным locator. Display name, client id и цвет задаются клиентом; backend не выдаёт session/token и не проверяет ownership или роли. Любой подключённый клиент, знающий room id, может менять файлы, запускать и останавливать код. Выбор просматриваемого файла остаётся локальным для клиента.
 
 ## Configuration
 
@@ -314,7 +314,7 @@ Production Compose multi-stage собирает backend и frontend. Frontend as
 - `rooms.ts` владеет room/file invariants; `realtime.ts` владеет transport routing и broadcasts; `runner.ts` изолирует Docker API детали.
 - Backend local imports используют `.js`, хотя source-файлы имеют `.ts`, из-за NodeNext ESM compilation.
 - Server serializes file content из Yjs, а не доверяет сохранённому `RoomFile.content`.
-- Backend — stateful singleton; room-wide active file, last result и active execution общие для всех участников.
+- Backend — stateful singleton; last result и active execution общие для всех участников, а выбранный в UI файл хранится локально у клиента.
 - API URL должны оставаться согласованными между `config.ts`, Vite proxy, frontend Nginx и внешним Nginx.
 - Runner containers одноразовые; cleanup выполняется независимо от результата выполнения.
 - Frontend и backend transport types меняются вручную в двух местах.

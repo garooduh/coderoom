@@ -23,7 +23,6 @@ export type RunResult = {
 export type RoomState = {
   roomId: string;
   files: RoomFile[];
-  activeFileId: string;
   users: User[];
   lastRun: RunResult;
 };
@@ -38,6 +37,5 @@ export type ClientMessage =
   | { type: 'createFile'; roomId: string; name: string; content?: string }
   | { type: 'renameFile'; roomId: string; fileId: string; name: string }
   | { type: 'deleteFile'; roomId: string; fileId: string }
-  | { type: 'selectFile'; roomId: string; fileId: string }
   | { type: 'runCode'; roomId: string; fileId: string; content?: string }
   | { type: 'stopCode'; roomId: string };

@@ -197,7 +197,7 @@ Lint-конфигурации и `lint` script нет. Отдельного `typ
 - `POST /api/rooms` — создаёт комнату.
 - `GET /api/rooms/:roomId` — возвращает room state.
 - `POST /api/rooms/:roomId/run` — запускает файл по `{ "fileId": string }`.
-- `/ws` — JSON events для join/leave, file operations, active file и execution.
+- `/ws` — JSON events для join/leave, file operations и execution.
 - `/yjs/:roomId` — бинарные Yjs sync и awareness messages.
 
 Подробные цепочки сообщений и состояния описаны в [ARCHITECTURE.md](ARCHITECTURE.md).

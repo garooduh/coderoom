@@ -14,7 +14,6 @@ import {
   nextColor,
   removeUser,
   renameFile,
-  selectFile,
   serializeFiles,
   serializeRoom,
   setRoomDeletionHandler
@@ -156,13 +155,6 @@ export function attachRealtime(server: Server) {
         if (message.type === 'deleteFile') {
           deleteFile(room, message.fileId);
           broadcast(room, { type: 'filesUpdated', files: serializeFiles(room) });
-          broadcast(room, { type: 'activeFileUpdated', activeFileId: room.activeFileId });
-          return;
-        }
-
-        if (message.type === 'selectFile') {
-          selectFile(room, message.fileId);
-          broadcast(room, { type: 'activeFileUpdated', activeFileId: room.activeFileId });
           return;
         }
 
