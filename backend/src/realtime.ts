@@ -187,8 +187,12 @@ export function attachRealtime(server: Server) {
 
   yWss.on('connection', (ws, request) => {
     const url = new URL(request.url ?? '/', 'http://localhost');
-    const roomId = decodeURIComponent(url.pathname.replace('/yjs/', ''));
-    setupYjsConnection(ws, roomId);
+    try {
+      const roomId = decodeURIComponent(url.pathname.replace('/yjs/', ''));
+      setupYjsConnection(ws, roomId);
+    } catch {
+      ws.close(1008, 'Invalid room URL');
+    }
   });
 }
 
@@ -231,13 +235,26 @@ function getYRoom(roomId: string): YRoom {
     };
     yRoom.awareness.setLocalState(null);
     yRoom.awareness.on('update', ({ added, updated, removed }: { added: number[]; updated: number[]; removed: number[] }, origin: WebSocket | null) => {
+      // Only newly accepted states belong to this socket. Clients can relay other
+      // participants' awareness updates; those must not be removed when a relay leaves.
+      const controlledIds = origin ? yRoom!.conns.get(origin) : undefined;
+      for (const id of added) controlledIds?.add(id);
+      // Awareness retains clocks after removal, so a rejoining client appears in
+      // "updated", not "added". Reclaim states that no live connection owns.
+      for (const id of updated) {
+        if (![...yRoom!.conns.values()].some((ids) => ids.has(id))) controlledIds?.add(id);
+      }
+      for (const id of removed) {
+        for (const ids of yRoom!.conns.values()) ids.delete(id);
+      }
       const changedClients = added.concat(updated, removed);
       const encoder = encoding.createEncoder();
       encoding.writeVarUint(encoder, messageAwareness);
       encoding.writeVarUint8Array(encoder, encodeAwarenessUpdate(yRoom!.awareness, changedClients));
       const buff = encoding.toUint8Array(encoder);
       for (const conn of yRoom!.conns.keys()) {
-        if (conn !== origin && conn.readyState === WebSocket.OPEN) conn.send(buff);
+        // y-websocket's idle watchdog expects its own awareness heartbeat back.
+        if (conn.readyState === WebSocket.OPEN) conn.send(buff);
       }
     });
     doc.on('update', (update: Uint8Array, origin: WebSocket | null) => {
@@ -263,31 +280,25 @@ function setupYjsConnection(ws: WebSocket, roomId: string) {
   yRoom.conns.set(ws, new Set());
 
   ws.on('message', (message: Buffer) => {
-    const encoder = encoding.createEncoder();
-    const decoder = decoding.createDecoder(new Uint8Array(message));
-    const messageType = decoding.readVarUint(decoder);
+    try {
+      const encoder = encoding.createEncoder();
+      const decoder = decoding.createDecoder(new Uint8Array(message));
+      const messageType = decoding.readVarUint(decoder);
 
-    if (messageType === messageSync) {
-      encoding.writeVarUint(encoder, messageSync);
-      syncProtocol.readSyncMessage(decoder, encoder, yRoom.doc, ws);
-      const reply = encoding.toUint8Array(encoder);
-      if (reply.length > 1 && ws.readyState === WebSocket.OPEN) ws.send(reply);
-      return;
-    }
-
-    if (messageType === messageAwareness) {
-      const update = decoding.readVarUint8Array(decoder);
-      const controlledIds = yRoom.conns.get(ws);
-      if (controlledIds) {
-        const updateDecoder = decoding.createDecoder(update);
-        const len = decoding.readVarUint(updateDecoder);
-        for (let i = 0; i < len; i += 1) {
-          controlledIds.add(decoding.readVarUint(updateDecoder));
-          decoding.readVarUint(updateDecoder);
-          decoding.readVarString(updateDecoder);
-        }
+      if (messageType === messageSync) {
+        encoding.writeVarUint(encoder, messageSync);
+        syncProtocol.readSyncMessage(decoder, encoder, yRoom.doc, ws);
+        const reply = encoding.toUint8Array(encoder);
+        if (reply.length > 1 && ws.readyState === WebSocket.OPEN) ws.send(reply);
+        return;
       }
-      applyAwarenessUpdate(yRoom.awareness, update, ws);
+
+      if (messageType === messageAwareness) {
+        const update = decoding.readVarUint8Array(decoder);
+        applyAwarenessUpdate(yRoom.awareness, update, ws);
+      }
+    } catch {
+      ws.close(1003, 'Invalid Yjs message');
     }
   });
 

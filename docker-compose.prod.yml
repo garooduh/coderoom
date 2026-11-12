@@ -17,7 +17,7 @@ services:
     environment:
       - PORT=4000
       - RUNNER_IMAGE=collab-python-runner
-      - RUN_TIMEOUT_MS=15000
+      - RUN_TIMEOUT_MS=120000
       - RUN_OUTPUT_LIMIT_BYTES=65536
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

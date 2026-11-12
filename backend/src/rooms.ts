@@ -156,6 +156,7 @@ export function nextColor(index: number) {
 export function createFile(room: Room, name: string, content = '') {
   const error = validateFileName(room, name);
   if (error) throw new Error(error);
+  content = content.replace(/\r\n?/g, '\n');
   const file: RoomFile = {
     id: nanoid(10),
     name: name.trim(),

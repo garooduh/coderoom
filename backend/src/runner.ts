@@ -4,7 +4,7 @@ import type { RunResult } from './types.js';
 
 const RUNNER_IMAGE = process.env.RUNNER_IMAGE || 'collab-python-runner';
 const DOCKER_SOCKET = process.env.DOCKER_SOCKET || (process.platform === 'win32' ? '//./pipe/docker_engine' : '/var/run/docker.sock');
-const TIMEOUT_MS = Number(process.env.RUN_TIMEOUT_MS || 15000);
+const TIMEOUT_MS = Number(process.env.RUN_TIMEOUT_MS || 120000);
 const MAX_OUTPUT_BYTES = Number(process.env.RUN_OUTPUT_LIMIT_BYTES || 64 * 1024);
 
 type DockerCreateResponse = {

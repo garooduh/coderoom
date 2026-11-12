@@ -115,7 +115,7 @@ Backend читает переменные из `process.env`; библиотек
 | `ALLOWED_ORIGINS` | empty | Список разрешённых CORS origins через запятую; `*` запрещён. При пустом значении CORS middleware не подключается |
 | `RUNNER_IMAGE` | `collab-python-runner` | Docker image для каждого запуска |
 | `DOCKER_SOCKET` | `/var/run/docker.sock` на Unix, `//./pipe/docker_engine` на Windows | Docker Engine socket |
-| `RUN_TIMEOUT_MS` | `15000` | Timeout одного запуска в миллисекундах |
+| `RUN_TIMEOUT_MS` | `120000` | Timeout одного запуска в миллисекундах |
 | `RUN_OUTPUT_LIMIT_BYTES` | `65536` | Общий лимит `stdout` + `stderr` в байтах |
 
 ### Frontend environment
@@ -185,7 +185,15 @@ npm run build --prefix frontend
 
 ## Tests
 
-Автоматических тестов и `test` script в репозитории сейчас нет.
+После установки зависимостей обоих пакетов и сборки backend:
+
+```bash
+node scripts/check-sync.mjs
+```
+
+Проверка запускает временный WebSocket-сервер и проверяет импорт переносов строк, замену соединения, одновременные/отложенные правки, awareness, некорректные сообщения и соединение без активности (около 40 секунд). Docker runner не требуется.
+
+Для проверки реального редактора запустите backend на порту 4000, Vite на 5173 и `geckodriver --port 4444`, затем `python3 scripts/check-sync-browser.py`. Скрипт использует headless Firefox и стандартную библиотеку Python; проверяет две вкладки, разрывы обоих каналов, выделение, переключение файлов и совпадение текста с сервером. Проверка предназначена для локального Vite, создаёт тестовые комнаты в памяти локального backend. Отдельного npm `test` script нет.
 
 ## Lint / typecheck
 

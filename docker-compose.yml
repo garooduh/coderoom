@@ -19,7 +19,7 @@ services:
       - PORT=4000
       - ALLOWED_ORIGINS=http://localhost:5173
       - RUNNER_IMAGE=dh-mirror.gitverse.ru/library/python:3.12-slim
-      - RUN_TIMEOUT_MS=15000
+      - RUN_TIMEOUT_MS=120000
     depends_on:
       runner-image:
         condition: service_completed_successfully

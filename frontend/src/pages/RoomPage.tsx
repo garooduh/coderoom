@@ -33,14 +33,6 @@ function getStoredEditorFontSize() {
   return Number.isFinite(saved) ? clampEditorFontSize(saved) : 14;
 }
 
-function getClientId() {
-  const existing = sessionStorage.getItem('clientId');
-  if (existing) return existing;
-  const created = crypto.randomUUID();
-  sessionStorage.setItem('clientId', created);
-  return created;
-}
-
 function getUserColor() {
   const existing = sessionStorage.getItem('userColor');
   if (existing) return existing;
@@ -132,7 +124,8 @@ export function RoomPage() {
   const { roomId = '' } = useParams();
   const navigate = useNavigate();
   const { theme } = useTheme();
-  const clientId = useMemo(getClientId, []);
+  // sessionStorage is copied when a tab is duplicated. Each page needs its own membership.
+  const [clientId] = useState(() => crypto.randomUUID());
   const userColor = useMemo(getUserColor, []);
   const [nameInput, setNameInput] = useState(localStorage.getItem('displayName') || '');
   const [joinedName, setJoinedName] = useState('');
@@ -143,6 +136,7 @@ export function RoomPage() {
   const [runResult, setRunResult] = useState<RunResult>(emptyRun);
   const [editorMounted, setEditorMounted] = useState(false);
   const [initialSyncComplete, setInitialSyncComplete] = useState(false);
+  const [yjsReady, setYjsReady] = useState(false);
   const [editorModelReady, setEditorModelReady] = useState(false);
   const [editorModelFileId, setEditorModelFileId] = useState<string | null>(null);
   const [firstEditorLoadComplete, setFirstEditorLoadComplete] = useState(false);
@@ -182,7 +176,7 @@ export function RoomPage() {
 
   const activeFile = room?.files.find((file) => file.id === activeFileId) || null;
   const activeModelReady = Boolean(activeFile && editorModelReady && editorModelFileId === activeFile.id);
-  const editorReady = Boolean(activeFile && initialSyncComplete && activeModelReady);
+  const editorReady = Boolean(activeFile && yjsReady && socketReady && activeModelReady);
   const runReady = Boolean(editorReady && socketReady);
   const showEditorLoading = Boolean(joinedName && activeFile && !firstEditorLoadComplete && (!initialSyncComplete || !editorModelReady));
 
@@ -219,10 +213,16 @@ export function RoomPage() {
     if (!joinedName || !roomId) return;
 
     const ydoc = new Y.Doc();
-    const provider = new WebsocketProvider(`${WS_BASE_URL}/yjs`, roomId, ydoc, { connect: true });
+    const provider = new WebsocketProvider(`${WS_BASE_URL}/yjs`, roomId, ydoc, {
+      connect: true,
+      disableBc: true,
+      // The provider's 30s watchdog only sees data frames, not server ping/pong.
+      resyncInterval: 10000
+    });
     ydocRef.current = ydoc;
     providerRef.current = provider;
     setInitialSyncComplete(provider.synced);
+    setYjsReady(false);
     setEditorModelReady(false);
     setEditorModelFileId(null);
     setFirstEditorLoadComplete(false);
@@ -240,8 +240,10 @@ export function RoomPage() {
     }, 5000);
 
     const handleProviderSync = (isSynced: boolean) => {
-      setInitialSyncComplete(isSynced && provider.wsconnected);
-      if (isSynced) {
+      setYjsReady(isSynced && provider.wsconnected);
+      if (isSynced && provider.wsconnected) {
+        // Keep the existing model/binding across reconnects (including its undo and selection).
+        setInitialSyncComplete(true);
         window.clearTimeout(syncTimeout);
         setError((current) => (current === yjsConnectionError ? '' : current));
       }
@@ -251,7 +253,7 @@ export function RoomPage() {
 
     const handleProviderStatus = ({ status }: { status: 'connected' | 'disconnected' | 'connecting' }) => {
       if (status !== 'connected') {
-        setInitialSyncComplete(false);
+        setYjsReady(false);
       }
     };
 
@@ -352,6 +354,8 @@ export function RoomPage() {
       modelRef.current = null;
       remoteSelectionStyleRef.current = null;
       setInitialSyncComplete(false);
+      setYjsReady(false);
+      setSocketReady(false);
       setEditorModelReady(false);
       setEditorModelFileId(null);
       setFirstEditorLoadComplete(false);
@@ -381,6 +385,7 @@ export function RoomPage() {
 
     const text = ydocRef.current.getText(`file:${activeFile.id}`);
     const model = monacoRef.current.editor.createModel(text.toString(), activeFile.language);
+    model.setEOL(monacoRef.current.editor.EndOfLineSequence.LF);
     editorRef.current.setModel(model);
     bindingRef.current = new MonacoBinding(text, model, new Set([editorRef.current]), providerRef.current.awareness);
     modelRef.current = model;
@@ -479,7 +484,10 @@ export function RoomPage() {
     }
 
     try {
-      const imports = await Promise.all(supportedFiles.map(async (file) => ({ name: file.name, content: await file.text() })));
+      const imports = await Promise.all(supportedFiles.map(async (file) => ({
+        name: file.name,
+        content: (await file.text()).replace(/\r\n?/g, '\n')
+      })));
       imports.forEach((file) => send({ type: 'createFile', ...file }));
       if (unsupportedFiles.length > 0) {
         setError(`Пропущены неподдерживаемые файлы: ${unsupportedFiles.map((file) => file.name).join(', ')}`);
@@ -602,6 +610,11 @@ export function RoomPage() {
           </div>
         </div>
         <div className="topBarActions">
+          {joinedName && (
+            <span className="muted" role="status">
+              {socketReady && yjsReady ? 'Подключено' : 'Восстановление соединения…'}
+            </span>
+          )}
           <div className="topUsers" aria-label="Участники">
             <div className="topUsersList">
               {room?.users.map((user) => (
